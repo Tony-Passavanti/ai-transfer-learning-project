@@ -1,455 +1,286 @@
-# Transfer Learning Image Classifier with Baseline vs Fine-Tuned Comparison
+# Implementation Plan
 
-## Project Overview
+## Overview
 
-This project trains and evaluates two transfer learning strategies using
-a pretrained ResNet18 on a custom dataset of tool images. The goal is to
-compare the performance of a **baseline model with a frozen backbone**
-against a **fine-tuned model with partially unfrozen layers**.
+Fine-tune a pretrained ResNet18 to classify four hammer subtypes.
+Compare a frozen-backbone baseline against a fine-tuned model in an
+interactive Streamlit demo. The demo lets a user pick from sample images
+and see side-by-side predictions from both models.
 
-A Streamlit UI allows a user to upload an image and see predictions from
-both models **side-by-side**, along with confusion matrices computed on
-a held-out test set.
+---
 
-This project demonstrates:
+## Step 1 — Project Scaffolding
 
--   Transfer learning
--   Experimental design (ablation study)
--   Evaluation metrics
--   Model comparison
--   Interactive inference UI
+**Files:** `requirements.txt`
 
-------------------------------------------------------------------------
+- Confirm dependencies: `torch`, `torchvision`, `streamlit`,
+  `scikit-learn`, `matplotlib`, `numpy`, `pillow`
+- Create empty directories: `models/`, `runs/`, `data/`, `raw_data/`,
+  `app/sample_images/`
+- Verify imports work: `python -c "import torch, torchvision, streamlit, sklearn, matplotlib, numpy, PIL"`
 
-# Dataset
+---
 
-## Classes
+## Step 2 — Shared Utilities
 
-hammer screwdriver power_drill saw shovel
+**Files:** `src/utils.py`
 
-Total classes: **5**
+Provide reusable helpers used by every other module:
 
-Expected dataset size:
+- `set_seeds(seed=42)` — sets `random`, `numpy`, `torch` seeds
+- `get_device()` — returns `cuda` if available, else `cpu`
+- `get_train_transform()` / `get_eval_transform()` — returns the
+  standard image transform pipelines (ImageNet normalization)
+- `CLASS_NAMES` — canonical sorted list of the 4 class labels
 
--   \~50--100 images per class
--   Total dataset size: \~250--500 images
+---
 
-------------------------------------------------------------------------
+## Step 3 — Model Builder
 
-# Dataset Directory Structure
+**Files:** `src/model.py`
 
-The dataset must be arranged in the following structure before training
-begins:
+- `build_resnet18(num_classes, freeze_backbone=True)`:
+  - Loads `torchvision.models.resnet18(weights=ResNet18_Weights.DEFAULT)`
+  - Replaces `fc` layer: `Linear(512, num_classes)`
+  - If `freeze_backbone=True`, freezes everything except `fc`
+- `unfreeze_for_finetuning(model)`:
+  - Unfreezes `layer4` and `fc`, keeps everything else frozen
+  - Used when transitioning from baseline to fine-tuning
 
-data/ train/ hammer/ screwdriver/ power_drill/ saw/ shovel/
+**Validation:** instantiate both configurations and print trainable
+parameter counts.
 
-val/ hammer/ screwdriver/ power_drill/ saw/ shovel/
+---
 
-test/ hammer/ screwdriver/ power_drill/ saw/ shovel/
+## Step 4 — Streamlit UI (Placeholder Mode)
 
-Split ratio:
+**Files:** `app/streamlit_app.py`
 
-70% train\
-15% validation\
-15% test
+Build the full UI shell. In this step, use the stock ImageNet-pretrained
+ResNet18 (1000 classes) so the app is functional before any custom
+training. This means predictions will show ImageNet labels like "hammer"
+— that's fine as a placeholder.
 
-------------------------------------------------------------------------
+### Layout
 
-# Human Tasks (Outside Codex)
+1. **Title and explanation** — brief description of what transfer
+   learning is and what this demo shows.
+2. **Sample image gallery** — display thumbnail grid from `media/`
+   (13 images already present: bp1-3, ch1-4, rm1-3, sh1-3 covering
+   all four hammer types). User clicks to select one.
+3. **Side-by-side results** — two columns:
+   - Left: "Baseline Model (Frozen Backbone)"
+   - Right: "Fine-Tuned Model (Hammer-Specialized)"
+   - Each column shows: predicted class, confidence %, top-3 list
+4. **Confusion matrix section** — two matrices with a raw/normalized
+   toggle. Rendered with matplotlib. (Shows placeholder text like "No
+   evaluation data yet" until `runs/*.npy` files exist.)
 
-These steps must be completed manually before running training.
+### Inference logic
 
-## Task H1 --- Collect Dataset
+- Load model weights from `models/baseline.pt` and
+  `models/finetuned.pt` if they exist.
+- If weight files are missing, fall back to stock ImageNet ResNet18 for
+  both columns and display a banner: "Using placeholder ImageNet model —
+  train your models to see real results."
+- Apply eval transform → unsqueeze → forward pass → softmax → top-3.
 
-Go to a hardware store (example: Lowe's) and take photos of tools.
+**Validation:** `streamlit run app/streamlit_app.py` launches without
+errors and renders the page with placeholder images.
 
-Capture images for each class:
+---
 
--   hammer
--   screwdriver
--   power drill
--   saw
--   shovel
+## Step 5 — Data Loader
 
-Guidelines:
+**Files:** `src/data.py`
 
--   vary angles
--   vary lighting
--   vary background
--   avoid near duplicates
+- `get_dataloaders(data_dir, batch_size=32)`:
+  - Uses `torchvision.datasets.ImageFolder` for `train/`, `val/`,
+    `test/` subdirectories
+  - Applies training transforms to train, eval transforms to val/test
+  - Returns three `DataLoader` objects
+- Print dataset sizes and class-to-index mapping when run as
+  `__main__`.
+- Friendly error if `data_dir` does not exist.
 
-Goal:
+---
 
-50--100 images per class
+## Step 6 — Dataset Split Script
 
-------------------------------------------------------------------------
+**Files:** `src/split_dataset.py`
 
-## Task H2 --- Organize Dataset
+- Reads from `raw_data/<class>/` (supports jpg, jpeg, png, webp)
+- Splits 70/15/15 into `data/{train,val,test}/<class>/`
+- Copies files (does not move)
+- Deterministic with seed 42
+- Prints per-class per-split counts
+- Writes `runs/class_names.json`
+- CLI: `python src/split_dataset.py [--raw_dir raw_data] [--out_dir data] [--seed 42]`
 
-Place images into folders by class:
+---
 
-raw_data/ hammer/ screwdriver/ power_drill/ saw/ shovel/
+## Step 7 — Training Script
 
-------------------------------------------------------------------------
+**Files:** `src/train.py`
 
-## Task H3 --- Run Dataset Split Script
+This script will be copied to the school GPU server and run there.
+It must be self-contained (importing only from `src/` siblings).
 
-Codex will create a script:
+### Phase A — Baseline
 
-src/split_dataset.py
+- `build_resnet18(num_classes=4, freeze_backbone=True)`
+- Train for `--baseline_epochs` (default 10) with lr=1e-3, Adam
+- Track train/val loss and accuracy per epoch
+- Save best-val-accuracy checkpoint to `models/baseline.pt`
+- Save training curves to `runs/baseline_metrics.json`
 
-You will run:
+### Phase B — Fine-Tuning
 
+- Load baseline weights
+- Call `unfreeze_for_finetuning(model)` (unfreezes `layer4` + `fc`)
+- Train for `--finetune_epochs` (default 10) with lr=1e-4, Adam
+- Save best-val-accuracy checkpoint to `models/finetuned.pt`
+- Save training curves to `runs/finetuned_metrics.json`
+
+### CLI
+
+```
+python src/train.py \
+  --data_dir data \
+  --batch_size 32 \
+  --baseline_epochs 10 \
+  --finetune_epochs 10
+```
+
+### Logging
+
+Print: device, dataset sizes, learning rate, epoch progress with
+train/val loss and accuracy.
+
+---
+
+## Step 8 — Evaluation Script
+
+**Files:** `src/evaluate.py`
+
+- Loads both model checkpoints
+- Runs inference on the full test set
+- Computes per-model: accuracy, precision, recall, F1 (all macro)
+- Generates confusion matrices
+- Saves:
+  - `runs/baseline_metrics.json` (updated with test metrics)
+  - `runs/finetuned_metrics.json` (updated with test metrics)
+  - `runs/baseline_confusion_matrix.npy`
+  - `runs/finetuned_confusion_matrix.npy`
+- Prints a comparison summary table
+
+### CLI
+
+```
+python src/evaluate.py \
+  --data_dir data \
+  --baseline_ckpt models/baseline.pt \
+  --finetuned_ckpt models/finetuned.pt
+```
+
+---
+
+## Step 9 — Collect Dataset and Train (Human Steps)
+
+### 9a — Collect Images
+
+Take or source ~50-100 photos per class of:
+- Claw hammer
+- Ball-peen hammer
+- Sledge hammer
+- Rubber mallet
+
+Vary angles, lighting, and backgrounds. Place into:
+
+```
+raw_data/
+  ball_peen_hammer/
+  claw_hammer/
+  rubber_mallet/
+  sledge_hammer/
+```
+
+### 9b — Split Dataset
+
+```bash
 python src/split_dataset.py
-
-This script will:
-
--   split images into train / val / test
--   copy them into `data/` directory structure
-
-------------------------------------------------------------------------
-
-# Project Folder Structure
-
-ai-transfer-learning-project/
-
-IMPLEMENTATION_PLAN.md
-
-data/ train/ val/ test/
-
-models/
-
-runs/
-
-src/ data.py model.py train.py evaluate.py split_dataset.py utils.py
-
-app/ streamlit_app.py
-
-requirements.txt README.md
-
-------------------------------------------------------------------------
-
-# Model Architecture
-
-Backbone:
-
-ResNet18 (pretrained on ImageNet)
-
-Framework:
-
-PyTorch + TorchVision
-
-Classifier head:
-
-Linear(512 → 5)
-
-------------------------------------------------------------------------
-
-# Training Strategy
-
-Two models will be trained.
-
-## Model A --- Baseline
-
-Backbone layers:
-
-Frozen
-
-Only train:
-
-final fully connected layer
-
-------------------------------------------------------------------------
-
-## Model B --- Fine-Tuned
-
-Start from baseline weights.
-
-Unfreeze:
-
-layer4\
-fc
-
-Train with smaller learning rate.
-
-------------------------------------------------------------------------
-
-# Hyperparameters
-
-Recommended defaults:
-
-batch_size = 32\
-baseline_epochs = 10\
-finetune_epochs = 10\
-learning_rate_baseline = 1e-3\
-learning_rate_finetune = 1e-4
-
-Optimizer:
-
-Adam
-
-Loss:
-
-CrossEntropyLoss
-
-------------------------------------------------------------------------
-
-# Data Transforms
-
-Training transforms:
-
-Resize(256)\
-CenterCrop(224)\
-RandomHorizontalFlip\
-RandomRotation(10)\
-ToTensor\
-Normalize(mean, std from ImageNet)
-
-Validation / test transforms:
-
-Resize(256)\
-CenterCrop(224)\
-ToTensor\
-Normalize(mean, std from ImageNet)
-
-------------------------------------------------------------------------
-
-# Metrics
-
-Evaluate both models on the **test dataset**.
-
-Metrics to compute:
-
-accuracy\
-precision\
-recall\
-F1 score\
-confusion matrix
-
-Artifacts saved to:
-
-runs/ baseline_metrics.json finetuned_metrics.json
-baseline_confusion_matrix.npy finetuned_confusion_matrix.npy
-
-------------------------------------------------------------------------
-
-# Codex Implementation Tasks
-
-Codex CLI should implement the following tasks sequentially.
-
-------------------------------------------------------------------------
-
-# TASK 1 --- Create requirements.txt
-
-Dependencies:
-
-torch\
-torchvision\
-streamlit\
-scikit-learn\
-matplotlib\
-numpy\
-pillow
-
-------------------------------------------------------------------------
-
-# TASK 2 --- Implement Dataset Loader
-
-File:
-
-src/data.py
-
-Functions:
-
-def get_dataloaders(data_dir: str, batch_size: int): \"\"\" Returns
-train, val, and test DataLoaders. Uses torchvision.datasets.ImageFolder.
-\"\"\"
-
-------------------------------------------------------------------------
-
-# TASK 3 --- Implement Dataset Split Script
-
-File:
-
-src/split_dataset.py
-
-Responsibilities:
-
--   read from `raw_data/`
--   split into train/val/test
--   copy images into `data/`
-
-Split ratios:
-
-70 / 15 / 15
-
-------------------------------------------------------------------------
-
-# TASK 4 --- Implement Model Builder
-
-File:
-
-src/model.py
-
-Function:
-
-def build_resnet18(num_classes: int, freeze_backbone: bool):
-
-Responsibilities:
-
--   load pretrained ResNet18
--   replace final FC layer
--   freeze backbone if requested
-
-------------------------------------------------------------------------
-
-# TASK 5 --- Implement Training Script
-
-File:
-
-src/train.py
-
-Responsibilities:
-
-Train two models:
-
-Baseline: freeze_backbone = True
-
-Train classifier only.
-
-Save model:
-
-models/baseline.pt
-
-Fine-tuned:
-
-Load baseline weights.
-
-Unfreeze:
-
-layer4\
-fc
-
-Train additional epochs.
-
-Save:
-
-models/finetuned.pt
-
-------------------------------------------------------------------------
-
-# TASK 6 --- Implement Evaluation Script
-
-File:
-
-src/evaluate.py
-
-Responsibilities:
-
--   load model
--   run inference on test dataset
--   compute metrics
--   generate confusion matrix
-
-Save results:
-
-runs/*.json\
-runs/*.npy
-
-------------------------------------------------------------------------
-
-# TASK 7 --- Build Streamlit UI
-
-File:
-
-app/streamlit_app.py
-
-UI features:
-
-## Image Upload
-
-User uploads one image.
-
-## Side-by-Side Prediction
-
-| Baseline Model \| Fine-Tuned Model \|
-
-Each panel shows:
-
-Predicted class\
-Confidence score\
-Top-3 predictions
-
-## Confusion Matrix Section
-
-Two panels:
-
-Baseline Confusion Matrix\
-Fine-Tuned Confusion Matrix
-
-Add UI toggle:
-
-Raw counts / Normalized
-
-Use matplotlib to render matrices.
-
-------------------------------------------------------------------------
-
-# Inference Pipeline
-
-When image uploaded:
-
-1.  apply test transform\
-2.  run inference on both models\
-3.  compute softmax probabilities\
-4.  display results
-
-------------------------------------------------------------------------
-
-# Reproducibility
-
-Set random seeds:
-
-torch.manual_seed(42)\
-numpy.random.seed(42)\
-random.seed(42)
-
-------------------------------------------------------------------------
-
-# Running the Project
-
-Step 1 --- Install dependencies
-
+```
+
+### 9c — Train on Remote GPU Server
+
+Copy these to the remote machine:
+- `src/train.py`
+- `src/model.py`
+- `src/utils.py`
+- `src/data.py`
+- `data/` (the split dataset)
+- `requirements.txt`
+
+Run:
+```bash
 pip install -r requirements.txt
+python src/train.py --data_dir data
+```
 
-Step 2 --- Split dataset
+### 9d — Bring Back Artifacts
 
-python src/split_dataset.py
+Copy these files back to your local machine:
 
-Step 3 --- Train models
+```
+models/baseline.pt
+models/finetuned.pt
+runs/baseline_metrics.json
+runs/finetuned_metrics.json
+```
 
-python src/train.py
+Then run evaluation locally (or on the server):
+```bash
+python src/evaluate.py --data_dir data
+```
 
-Step 4 --- Evaluate models
+And bring back:
+```
+runs/baseline_confusion_matrix.npy
+runs/finetuned_confusion_matrix.npy
+runs/class_names.json
+```
 
-python src/evaluate.py
+**What these files contain:**
+- `.pt` files: model `state_dict` — the learned weights
+- `_metrics.json`: accuracy, precision, recall, F1, and
+  per-epoch loss/accuracy curves
+- `_confusion_matrix.npy`: NumPy array (4×4) of test-set predictions
+  vs. true labels
+- `class_names.json`: ordered list of class label strings, so the UI
+  maps indices to names consistently
 
-Step 5 --- Run UI
+---
 
-streamlit run app/streamlit_app.py
+## Step 10 — Final Assembly
 
-------------------------------------------------------------------------
+- Sample images already in `media/` — no collection needed
+- Confirm the UI loads real weights and shows hammer-subtype predictions
+- Verify confusion matrices render correctly
+- Test the full user flow end-to-end
+- Record the screen-capture demo with voiceover
 
-# Expected Result
+---
 
-When uploading an image, the UI displays:
+## Step 11 (Optional) — Deploy Online
 
-Baseline prediction\
-Fine-tuned prediction\
-Confidence scores
+Options for free hosting:
 
-Below that:
+| Platform | How |
+|----------|-----|
+| **Streamlit Community Cloud** | Connect GitHub repo, point to `app/streamlit_app.py`. Free. Easiest. |
+| **HuggingFace Spaces** | Create a Space of type "Streamlit", push the repo. Free. |
+| **Render** | Add a `render.yaml` or use their dashboard. Free tier available. |
 
-Confusion matrices for both models
-
-Allowing visual comparison of model performance.
+For any of these, the model weight files (`models/*.pt`) and confusion
+matrices (`runs/*.npy`) must be committed to the repo or uploaded as
+artifacts, since the hosting platform needs access to them.
