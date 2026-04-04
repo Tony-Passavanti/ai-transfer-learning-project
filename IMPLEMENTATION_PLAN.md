@@ -16,7 +16,7 @@ and see side-by-side predictions from both models.
 - Confirm dependencies: `torch`, `torchvision`, `streamlit`,
   `scikit-learn`, `matplotlib`, `numpy`, `pillow`
 - Create empty directories: `models/`, `runs/`, `data/`, `raw_data/`,
-  `app/sample_images/`
+  `app/`, `src/`
 - Verify imports work: `python -c "import torch, torchvision, streamlit, sklearn, matplotlib, numpy, PIL"`
 
 ---
@@ -72,17 +72,12 @@ training. This means predictions will show ImageNet labels like "hammer"
    - Left: "Baseline Model (Frozen Backbone)"
    - Right: "Fine-Tuned Model (Hammer-Specialized)"
    - Each column shows: predicted class, confidence %, top-3 list
-4. **Confusion matrix section** — two matrices with a raw/normalized
-   toggle. Rendered with matplotlib. (Shows placeholder text like "No
-   evaluation data yet" until `runs/*.npy` files exist.)
-
 ### Inference logic
 
-- Load model weights from `models/baseline.pt` and
-  `models/finetuned.pt` if they exist.
-- If weight files are missing, fall back to stock ImageNet ResNet18 for
-  both columns and display a banner: "Using placeholder ImageNet model —
-  train your models to see real results."
+- Baseline is always the stock ImageNet-pretrained ResNet18 (1000 classes).
+- Load fine-tuned weights from `models/finetuned.pt` if available.
+- If the fine-tuned weight file is missing, fall back to stock ImageNet
+  ResNet18 and display a banner.
 - Apply eval transform → unsqueeze → forward pass → softmax → top-3.
 
 **Validation:** `streamlit run app/streamlit_app.py` launches without
@@ -159,35 +154,9 @@ train/val loss and accuracy.
 
 ---
 
-## Step 8 — Evaluation Script
+## Step 8 — Collect Dataset and Train (Human Steps)
 
-**Files:** `src/evaluate.py`
-
-- Loads both model checkpoints
-- Runs inference on the full test set
-- Computes per-model: accuracy, precision, recall, F1 (all macro)
-- Generates confusion matrices
-- Saves:
-  - `runs/baseline_metrics.json` (updated with test metrics)
-  - `runs/finetuned_metrics.json` (updated with test metrics)
-  - `runs/baseline_confusion_matrix.npy`
-  - `runs/finetuned_confusion_matrix.npy`
-- Prints a comparison summary table
-
-### CLI
-
-```
-python src/evaluate.py \
-  --data_dir data \
-  --baseline_ckpt models/baseline.pt \
-  --finetuned_ckpt models/finetuned.pt
-```
-
----
-
-## Step 9 — Collect Dataset and Train (Human Steps)
-
-### 9a — Collect Images
+### 8a — Collect Images
 
 Take or source ~50-100 photos per class of:
 - Claw hammer
@@ -205,13 +174,13 @@ raw_data/
   sledge_hammer/
 ```
 
-### 9b — Split Dataset
+### 8b — Split Dataset
 
 ```bash
 python src/split_dataset.py
 ```
 
-### 9c — Train on Remote GPU Server
+### 8c — Train on Remote GPU Server
 
 Copy these to the remote machine:
 - `src/train.py`
@@ -227,51 +196,29 @@ pip install -r requirements.txt
 python src/train.py --data_dir data
 ```
 
-### 9d — Bring Back Artifacts
+### 8d — Bring Back Artifacts
 
-Copy these files back to your local machine:
+Copy this file back to your local machine:
 
 ```
-models/baseline.pt
 models/finetuned.pt
-runs/baseline_metrics.json
-runs/finetuned_metrics.json
 ```
 
-Then run evaluation locally (or on the server):
-```bash
-python src/evaluate.py --data_dir data
-```
-
-And bring back:
-```
-runs/baseline_confusion_matrix.npy
-runs/finetuned_confusion_matrix.npy
-runs/class_names.json
-```
-
-**What these files contain:**
-- `.pt` files: model `state_dict` — the learned weights
-- `_metrics.json`: accuracy, precision, recall, F1, and
-  per-epoch loss/accuracy curves
-- `_confusion_matrix.npy`: NumPy array (4×4) of test-set predictions
-  vs. true labels
-- `class_names.json`: ordered list of class label strings, so the UI
-  maps indices to names consistently
+This is the model `state_dict` (learned weights). The UI loads it
+to run fine-tuned inference.
 
 ---
 
-## Step 10 — Final Assembly
+## Step 9 — Final Assembly
 
 - Sample images already in `media/` — no collection needed
 - Confirm the UI loads real weights and shows hammer-subtype predictions
-- Verify confusion matrices render correctly
 - Test the full user flow end-to-end
 - Record the screen-capture demo with voiceover
 
 ---
 
-## Step 11 (Optional) — Deploy Online
+## Step 10 (Optional) — Deploy Online
 
 Options for free hosting:
 
@@ -281,6 +228,6 @@ Options for free hosting:
 | **HuggingFace Spaces** | Create a Space of type "Streamlit", push the repo. Free. |
 | **Render** | Add a `render.yaml` or use their dashboard. Free tier available. |
 
-For any of these, the model weight files (`models/*.pt`) and confusion
-matrices (`runs/*.npy`) must be committed to the repo or uploaded as
-artifacts, since the hosting platform needs access to them.
+For any of these, the model weight file (`models/finetuned.pt`) must be
+committed to the repo or uploaded as an artifact, since the hosting
+platform needs access to it.

@@ -36,16 +36,10 @@ After running training remotely, bring back these files and place them
 in the project root:
 
 ```
-models/baseline.pt          # state_dict from baseline training
 models/finetuned.pt         # state_dict from fine-tuned training
-runs/baseline_metrics.json  # accuracy, precision, recall, F1, loss curves
-runs/finetuned_metrics.json
-runs/baseline_confusion_matrix.npy
-runs/finetuned_confusion_matrix.npy
-runs/class_names.json       # e.g. ["ball_peen_hammer","claw_hammer","rubber_mallet","sledge_hammer"]
 ```
 
-The UI and evaluation code depend on exactly these paths and formats.
+The UI loads this file to run fine-tuned inference.
 
 ## Demo UI Spec
 
@@ -60,14 +54,10 @@ The Streamlit app (`app/streamlit_app.py`) must:
    - Top predicted class
    - Confidence score (percentage)
    - Top-3 predictions with confidence scores
-5. Below the predictions, show confusion matrices for both models
-   (loaded from `runs/*.npy`) with a toggle between raw counts and
-   normalized values.
-6. Include brief explanatory text: the baseline model (frozen backbone,
-   trained only on the classifier head) is weaker at distinguishing
-   visually similar hammer subtypes, while the fine-tuned model
-   (unfrozen layer4 + fc, trained further on hammer images) is more
-   effective.
+5. Include brief explanatory text: the baseline model (stock ImageNet
+   ResNet18, no hammer-specific training) produces generic predictions,
+   while the fine-tuned model (trained on hammer images) is much more
+   effective at subtype discrimination.
 
 ## Folder Structure
 
@@ -101,7 +91,6 @@ ai-transfer-learning-project/
     train/  val/  test/
 
   models/                   # trained weights (.pt files)
-  runs/                     # metrics JSON, confusion matrix .npy, class_names.json
 ```
 
 ## Conventions
@@ -113,7 +102,7 @@ ai-transfer-learning-project/
 - **Image transforms:**
   - Train: `Resize(256) → CenterCrop(224) → RandomHorizontalFlip → RandomRotation(10) → ToTensor → Normalize(ImageNet)`
   - Val/Test/Inference: `Resize(256) → CenterCrop(224) → ToTensor → Normalize(ImageNet)`
-- **Metrics:** accuracy, precision (macro), recall (macro), F1 (macro), confusion matrix.
+- **Metrics:** accuracy, precision (macro), recall (macro), F1 (macro).
 - **No interactive prompts.** Scripts use `argparse` for configuration.
 
 ## Implementation Order
@@ -122,13 +111,12 @@ Development is ordered so the UI can be built and tested before the
 training dataset exists:
 
 1. Project scaffolding (requirements.txt, folder structure)
-2. `src/model.py` — model builder (works without data)
-3. `src/utils.py` — shared transforms, seed, device helpers
+2. `src/utils.py` — shared transforms, seed, device helpers
+3. `src/model.py` — model builder (works without data)
 4. `app/streamlit_app.py` — UI with stock ImageNet ResNet18 as placeholder
 5. `src/data.py` — DataLoader factory
 6. `src/split_dataset.py` — dataset splitter
 7. `src/train.py` — training pipeline
-8. `src/evaluate.py` — evaluation pipeline
-9. *User collects dataset and trains remotely*
-10. Plug in real weights + sample images, final polish
-11. (Optional) Deploy to Streamlit Cloud / HuggingFace Spaces
+8. *User collects dataset and trains remotely*
+9. Plug in real weights, final polish
+10. (Optional) Deploy to Streamlit Cloud / HuggingFace Spaces
