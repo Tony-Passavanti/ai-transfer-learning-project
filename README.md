@@ -1,16 +1,19 @@
 # Hammer Subtype Classifier — Transfer Learning Demo
 
-A transfer learning project that fine-tunes ResNet18 to distinguish
+A transfer learning project that fine-tunes ResNet50 to distinguish
 between four types of hammers: **ball-peen hammer**, **claw hammer**,
 **rubber mallet**, and **sledge hammer**.
 
 The Streamlit demo lets you pick a sample image and see side-by-side
 predictions from two models:
 
-- **Baseline** — frozen ImageNet backbone, only the classifier head is
-  trained. Struggles to tell similar hammer types apart.
-- **Fine-tuned** — backbone `layer4` unfrozen and trained further on
-  hammer images. Much better at subtype discrimination.
+- **Baseline** — stock ImageNet-pretrained ResNet50 with its original
+  1000-class output head, completely untrained on hammer images. It can
+  only predict generic ImageNet categories and cannot distinguish
+  between hammer subtypes.
+- **Fine-tuned** — `layer3`, `layer4`, and classifier unfrozen and
+  trained on hammer images with strong augmentation. Much better at
+  subtype discrimination.
 
 ## Quick Start
 
@@ -53,7 +56,7 @@ streamlit run app/streamlit_app.py
 ```
 app/streamlit_app.py        # demo UI
 media/                      # curated images for the demo gallery
-src/model.py                # ResNet18 builder
+src/model.py                # ResNet50 builder
 src/train.py                # training pipeline
 src/evaluate.py             # evaluation + metrics
 src/data.py                 # DataLoader factory

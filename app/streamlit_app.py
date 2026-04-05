@@ -12,9 +12,9 @@ import streamlit as st
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from torchvision.models import ResNet18_Weights
+from torchvision.models import ResNet50_Weights
 
-from src.model import build_resnet18
+from src.model import build_resnet50
 from src.utils import CLASS_NAMES, get_device, get_eval_transform
 
 # ---------------------------------------------------------------------------
@@ -41,25 +41,30 @@ DISPLAY_NAMES = {name: label for name, label in zip(CLASS_NAMES, [
 
 @st.cache_resource
 def load_models():
-    """Load baseline (stock ImageNet ResNet18) and fine-tuned models."""
+    """Load baseline (stock ImageNet ResNet50) and fine-tuned models."""
     device = get_device()
     finetuned_path = MODELS_DIR / "finetuned.pt"
 
     finetuned_ready = False
 
-    # --- Baseline: completely unmodified pretrained ImageNet ResNet18 ---
+    # --- Baseline: completely unmodified pretrained ImageNet ResNet50 ---
     from torchvision import models
-    baseline = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+    baseline = models.resnet50(weights=ResNet50_Weights.DEFAULT)
     baseline_labels = None  # signals ImageNet mode (1000 classes)
 
     # --- Fine-tuned ---
     if finetuned_path.exists():
-        finetuned = build_resnet18(num_classes=len(CLASS_NAMES), freeze_backbone=False)
-        finetuned.load_state_dict(torch.load(finetuned_path, map_location=device, weights_only=True))
-        finetuned_labels = CLASS_NAMES
-        finetuned_ready = True
+        try:
+            finetuned = build_resnet50(num_classes=len(CLASS_NAMES), freeze_backbone=False)
+            finetuned.load_state_dict(torch.load(finetuned_path, map_location=device, weights_only=True))
+            finetuned_labels = CLASS_NAMES
+            finetuned_ready = True
+        except RuntimeError:
+            # Weight file doesn't match architecture (e.g. old ResNet18 weights)
+            finetuned = models.resnet50(weights=ResNet50_Weights.DEFAULT)
+            finetuned_labels = None
     else:
-        finetuned = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+        finetuned = models.resnet50(weights=ResNet50_Weights.DEFAULT)
         finetuned_labels = None
 
     baseline.to(device).eval()
@@ -70,7 +75,7 @@ def load_models():
 
 def _get_imagenet_class_name(idx: int) -> str:
     """Return the human-readable ImageNet class name for an index."""
-    meta = ResNet18_Weights.DEFAULT.meta
+    meta = ResNet50_Weights.DEFAULT.meta
     categories = meta.get("categories", None)
     if categories and idx < len(categories):
         return categories[idx]
@@ -144,13 +149,23 @@ def main():
         layout="wide",
     )
 
+    # Compact spacing via custom CSS
+    st.markdown(
+        "<style>"
+        "div[data-testid='stAppViewBlockContainer'] { padding-top: 1rem; }"
+        "header[data-testid='stHeader'] { height: 0; min-height: 0; }"
+        "div[data-testid='stVerticalBlock'] > div { padding-top: 0; }"
+        "div[data-testid='stImage'] { margin-bottom: -0.5rem; }"
+        "h1 { margin-bottom: 0 !important; font-size: 1.6rem !important; }"
+        "h3 { margin-top: 0.3rem !important; margin-bottom: 0.2rem !important; font-size: 1.1rem !important; }"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
     st.title("Hammer Subtype Classifier")
     st.markdown(
-        "Compare a **baseline** model (stock ImageNet-pretrained ResNet18 "
-        "with no hammer-specific training) against a **fine-tuned** model "
-        "(all layers trained on hammer images). The baseline has never seen "
-        "hammer subtypes and produces essentially random predictions, while "
-        "the fine-tuned model learns the subtle differences between them."
+        "Compare a **baseline** model (stock ImageNet ResNet50) against a "
+        "**fine-tuned** model (trained on hammer images).",
     )
 
     # Load models
@@ -158,8 +173,9 @@ def main():
 
     if not finetuned_ready:
         st.warning(
-            "Fine-tuned model weights are missing. Place `finetuned.pt` in "
-            "`models/` after training to see real fine-tuned results."
+            "Fine-tuned model weights are missing or incompatible. "
+            "Train with the current ResNet50 architecture and place "
+            "`finetuned.pt` in `models/` to see real fine-tuned results."
         )
 
     st.divider()
@@ -174,9 +190,8 @@ def main():
         st.error(f"No images found in `{MEDIA_DIR}`. Add sample images to continue.")
         return
 
-    # Display thumbnails in a compact, aligned grid
-    # Use padding columns on each side to keep thumbnails small and centered
-    cols_per_row = 4
+    # Display thumbnails in a compact grid — 7 per row to fit on one screen
+    cols_per_row = 7
 
     # Use session state to track selection
     if "selected_image" not in st.session_state:
@@ -184,12 +199,11 @@ def main():
 
     for row_start in range(0, len(gallery), cols_per_row):
         row_items = gallery[row_start : row_start + cols_per_row]
-        # Pad with empty slots so every row has the same number of columns
         cols = st.columns(cols_per_row)
         for col, (img_path, display_name) in zip(cols, row_items):
             with col:
                 img = Image.open(img_path)
-                thumb = _make_square_thumbnail(img, size=150)
+                thumb = _make_square_thumbnail(img, size=100)
                 st.image(thumb, use_container_width=True)
                 if st.button(display_name, key=str(img_path), use_container_width=True):
                     st.session_state.selected_image = str(img_path)
@@ -205,10 +219,11 @@ def main():
 
         image = Image.open(selected_path)
 
-        # Show the selected image centered
-        sel_col1, sel_col2, sel_col3 = st.columns([1, 2, 1])
+        # Show the selected image small and centered
+        sel_col1, sel_col2, sel_col3 = st.columns([2, 1, 2])
         with sel_col2:
-            st.image(image, caption="Selected Image", use_container_width=True)
+            thumb_sel = _make_square_thumbnail(image, size=150)
+            st.image(thumb_sel, caption="Selected Image", use_container_width=True)
 
         # Run inference on both models
         baseline_results = run_inference(baseline, image, bl_labels, device)
@@ -217,7 +232,7 @@ def main():
         col_left, col_right = st.columns(2)
 
         with col_left:
-            st.markdown("#### Baseline Model (Stock ImageNet ResNet18)")
+            st.markdown("#### Baseline Model (Stock ImageNet ResNet50)")
             _render_predictions(baseline_results)
 
         with col_right:
@@ -233,17 +248,18 @@ def main():
 **What is transfer learning?**
 
 Instead of training a neural network from scratch, we start with a
-model (ResNet18) that was already trained on 1.2 million images from
+model (ResNet50) that was already trained on 1.2 million images from
 ImageNet. This model has already learned to recognize edges, textures,
 and shapes — general visual features that transfer well to new tasks.
 
-**Baseline model** — A stock ResNet18 with its original ImageNet-pretrained
-weights and a randomly initialized 4-class classifier head. It has never
-been trained on hammer images, so its predictions across the four hammer
-subtypes are essentially random. This shows what a pretrained model looks
-like *before* any task-specific training.
+**Baseline model** — A stock ResNet50 with its original ImageNet-pretrained
+weights and 1000-class output head. It has never been trained on hammer
+subtypes, so it can only predict generic ImageNet categories (e.g.
+"hammer", "hatchet") and cannot distinguish between hammer subtypes.
+This shows what a pretrained model looks like *before* any task-specific
+training.
 
-**Fine-tuned model** — We start from the same pretrained ResNet18 but
+**Fine-tuned model** — We start from the same pretrained ResNet50 but
 train all layers on our hammer dataset. This lets the network adapt its
 learned features to the specific visual differences between hammer
 subtypes — handle shape, head geometry, material texture — resulting in

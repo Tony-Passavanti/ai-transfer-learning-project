@@ -1,45 +1,44 @@
-"""ResNet18 model builder for baseline and fine-tuned configurations."""
+"""ResNet50 model builder for baseline and fine-tuned configurations."""
 
 import torch.nn as nn
 from torchvision import models
-from torchvision.models import ResNet18_Weights
+from torchvision.models import ResNet50_Weights
 
 
-def build_resnet18(num_classes: int, freeze_backbone: bool = True) -> nn.Module:
-    """Load a pretrained ResNet18 and replace the classifier head.
+def build_resnet50(num_classes: int, freeze_backbone: bool = True) -> nn.Module:
+    """Load a pretrained ResNet50 and replace the classifier head.
 
     Args:
         num_classes: Number of output classes (4 for hammer subtypes).
         freeze_backbone: If True, freeze all layers except the final fc layer.
-            Used for baseline training.
     """
-    model = models.resnet18(weights=ResNet18_Weights.DEFAULT)
+    model = models.resnet50(weights=ResNet50_Weights.DEFAULT)
 
     if freeze_backbone:
         for param in model.parameters():
             param.requires_grad = False
 
-    # Replace the final fully connected layer
+    # Replace the final fully connected layer (2048 -> num_classes)
     model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     return model
 
 
 def unfreeze_for_finetuning(model: nn.Module) -> nn.Module:
-    """Unfreeze layer4 and fc for fine-tuning, keep everything else frozen.
+    """Unfreeze layer3, layer4, and fc for fine-tuning.
 
-    Call this after loading baseline weights to prepare for the
-    fine-tuning phase.
+    Unfreezing deeper layers lets the model adapt features for
+    distinguishing visually similar hammer subtypes.
     """
-    # Freeze everything first
     for param in model.parameters():
         param.requires_grad = False
 
-    # Unfreeze layer4
+    for param in model.layer3.parameters():
+        param.requires_grad = True
+
     for param in model.layer4.parameters():
         param.requires_grad = True
 
-    # Unfreeze fc
     for param in model.fc.parameters():
         param.requires_grad = True
 
