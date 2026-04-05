@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fine-tune a pretrained ResNet18 to classify four hammer subtypes.
+Fine-tune a pretrained ResNet50 to classify four hammer subtypes.
 Compare a frozen-backbone baseline against a fine-tuned model in an
 interactive Streamlit demo. The demo lets a user pick from sample images
 and see side-by-side predictions from both models.
@@ -40,11 +40,11 @@ Provide reusable helpers used by every other module:
 **Files:** `src/model.py`
 
 - `build_resnet18(num_classes, freeze_backbone=True)`:
-  - Loads `torchvision.models.resnet18(weights=ResNet18_Weights.DEFAULT)`
-  - Replaces `fc` layer: `Linear(512, num_classes)`
+  - Loads `torchvision.models.resnet18(weights=ResNet50_Weights.DEFAULT)`
+  - Replaces `fc` layer: `Linear(2048, num_classes)`
   - If `freeze_backbone=True`, freezes everything except `fc`
 - `unfreeze_for_finetuning(model)`:
-  - Unfreezes `layer4` and `fc`, keeps everything else frozen
+  - Unfreezes `layer3`, `layer4`, and `fc`, keeps everything else frozen
   - Used when transitioning from baseline to fine-tuning
 
 **Validation:** instantiate both configurations and print trainable
@@ -57,7 +57,7 @@ parameter counts.
 **Files:** `app/streamlit_app.py`
 
 Build the full UI shell. In this step, use the stock ImageNet-pretrained
-ResNet18 (1000 classes) so the app is functional before any custom
+ResNet50 (1000 classes) so the app is functional before any custom
 training. This means predictions will show ImageNet labels like "hammer"
 — that's fine as a placeholder.
 
@@ -74,10 +74,10 @@ training. This means predictions will show ImageNet labels like "hammer"
    - Each column shows: predicted class, confidence %, top-3 list
 ### Inference logic
 
-- Baseline is always the stock ImageNet-pretrained ResNet18 (1000 classes).
+- Baseline is always the stock ImageNet-pretrained ResNet50 (1000 classes).
 - Load fine-tuned weights from `models/finetuned.pt` if available.
 - If the fine-tuned weight file is missing, fall back to stock ImageNet
-  ResNet18 and display a banner.
+  ResNet50 and display a banner.
 - Apply eval transform → unsqueeze → forward pass → softmax → top-3.
 
 **Validation:** `streamlit run app/streamlit_app.py` launches without

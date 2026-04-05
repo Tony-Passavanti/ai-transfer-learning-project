@@ -3,7 +3,7 @@
 ## Project Summary
 
 Graduate-level "Topics in Artificial Intelligence" course project.
-Fine-tune a pretrained ResNet18 to classify four hammer subtypes, then
+Fine-tune a pretrained ResNet50 to classify four hammer subtypes, then
 build a Streamlit demo comparing the baseline (frozen-backbone) model
 against the fine-tuned model side-by-side.
 
@@ -21,7 +21,7 @@ ball_peen_hammer  claw_hammer  rubber_mallet  sledge_hammer
 ## Runtime Constraints
 
 - **Inference / demo:** runs locally on the developer's Windows 11
-  machine (CPU only). ResNet18 is small enough for this.
+  machine (CPU only). ResNet50 is small enough for this.
 - **Training:** will be run on school-provided GPU servers. The
   developer will copy `src/train.py` (and any helpers it imports) to
   the remote machine, run training there, and bring back the weight
@@ -55,7 +55,7 @@ The Streamlit app (`app/streamlit_app.py`) must:
    - Confidence score (percentage)
    - Top-3 predictions with confidence scores
 5. Include brief explanatory text: the baseline model (stock ImageNet
-   ResNet18, no hammer-specific training) produces generic predictions,
+   ResNet50, no hammer-specific training) produces generic predictions,
    while the fine-tuned model (trained on hammer images) is much more
    effective at subtype discrimination.
 
@@ -75,7 +75,7 @@ ai-transfer-learning-project/
 
   src/
     data.py                 # DataLoader factory
-    model.py                # ResNet18 builder + unfreeze helper
+    model.py                # ResNet50 builder + unfreeze helper
     train.py                # trains baseline + fine-tuned, saves artifacts
     evaluate.py             # loads checkpoints, computes metrics on test set
     split_dataset.py        # raw_data/ → data/{train,val,test}/
@@ -100,7 +100,7 @@ ai-transfer-learning-project/
 - **Paths:** all scripts assume they are run from the project root directory.
 - **Model saving:** always save `model.state_dict()`, not the full model object.
 - **Image transforms:**
-  - Train: `Resize(256) → CenterCrop(224) → RandomHorizontalFlip → RandomRotation(10) → ToTensor → Normalize(ImageNet)`
+  - Train: `RandomResizedCrop(224) → RandomHorizontalFlip → RandomRotation(15) → RandomPerspective → ColorJitter → ToTensor → Normalize(ImageNet)`
   - Val/Test/Inference: `Resize(256) → CenterCrop(224) → ToTensor → Normalize(ImageNet)`
 - **Metrics:** accuracy, precision (macro), recall (macro), F1 (macro).
 - **No interactive prompts.** Scripts use `argparse` for configuration.
@@ -113,7 +113,7 @@ training dataset exists:
 1. Project scaffolding (requirements.txt, folder structure)
 2. `src/utils.py` — shared transforms, seed, device helpers
 3. `src/model.py` — model builder (works without data)
-4. `app/streamlit_app.py` — UI with stock ImageNet ResNet18 as placeholder
+4. `app/streamlit_app.py` — UI with stock ImageNet ResNet50 as placeholder
 5. `src/data.py` — DataLoader factory
 6. `src/split_dataset.py` — dataset splitter
 7. `src/train.py` — training pipeline

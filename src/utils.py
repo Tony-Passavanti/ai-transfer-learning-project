@@ -30,12 +30,17 @@ def get_device() -> torch.device:
 
 
 def get_train_transform() -> transforms.Compose:
-    """Return the image transform pipeline for training data."""
+    """Return the image transform pipeline for training data.
+
+    Uses aggressive augmentation to help the model generalise from a
+    small dataset of visually similar hammer types.
+    """
     return transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.RandomResizedCrop(224, scale=(0.7, 1.0)),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(10),
+        transforms.RandomRotation(15),
+        transforms.RandomPerspective(distortion_scale=0.2, p=0.3),
+        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.05),
         transforms.ToTensor(),
         transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
     ])
