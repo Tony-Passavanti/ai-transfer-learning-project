@@ -47,7 +47,6 @@ Open `http://localhost:8501` in your browser.
 ```bash
 python src/split_dataset.py      # raw_data/ → data/{train,val,test}/
 python src/train.py              # trains baseline + fine-tuned models
-python src/evaluate.py           # computes metrics and confusion matrices
 streamlit run app/streamlit_app.py
 ```
 
